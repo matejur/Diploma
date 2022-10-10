@@ -1,5 +1,5 @@
 # common config
-save_path: "/home/matej/diploma/testing/semantic-kitti"
+save_path: "../../experiments/PMF-SemanticKitti/"
 seed: 1
 gpu: "0"
 print_frequency: 2
