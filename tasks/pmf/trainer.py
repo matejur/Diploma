@@ -102,7 +102,7 @@ class Trainer(object):
             data_config_path = "../../pc_processor/dataset/semantic_kitti/semantic-kitti.yaml"
             trainset = pc_processor.dataset.semantic_kitti.SemanticKitti(
                 root=self.settings.data_root,
-                sequences=[0,1,2,3,4,5,6,7,9,10],
+                sequences=[4], #sequences=[0,1,2,3,4,5,6,7,9,10],
                 config_path=data_config_path
             )
             self.cls_weight = 1 / (trainset.cls_freq + 1e-3)
@@ -118,7 +118,7 @@ class Trainer(object):
 
             valset = pc_processor.dataset.semantic_kitti.SemanticKitti(
                 root=self.settings.data_root,
-                sequences=[8],
+                sequences=[3], # was 8
                 config_path=data_config_path
             )
 

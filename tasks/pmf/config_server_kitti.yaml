@@ -1,7 +1,7 @@
 # common config
-save_path: "../../experiments/PMF-SemanticKitti/"
+save_path: "/home/matej/diploma/testing/semantic-kitti"
 seed: 1
-gpu: "0,1,2,3"
+gpu: "0"
 print_frequency: 2
 n_threads: 4
 experiment_id: "baseline_timestamp"
@@ -10,8 +10,8 @@ experiment_id: "baseline_timestamp"
 val_only: false
 has_label: true
 is_debug: false
-n_epochs: 50
-batch_size: [2, 4]
+n_epochs: 2 # was 50
+batch_size: [1, 1]
 lr: 0.001
 warmup_epochs: 1
 momentum: 0.9
@@ -20,7 +20,7 @@ val_frequency: 1
 
 dataset: "SemanticKitti"
 nclasses: 20 # 19+1(ignored)
-data_root: "/path/to/semantic-kitti-fov/sequences"
+data_root: "/home/matej/diploma/datasets/semantic-kitti/sequences"
 
 base_channels: 32
 img_backbone: "resnet34"
