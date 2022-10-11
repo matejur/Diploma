@@ -134,6 +134,13 @@ class Inference(object):
                     self.evaluator.addBatch(
                         pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
 
+                    # sem_label = input_label[0][uproj_x_idx, uproj_y_idx]
+                    # sem_label = sem_label.cpu().numpy()
+                    # sem_label = sem_label.reshape((-1)).astype(np.int32)
+
+                    # self.evaluator.addBatch(
+                    #     pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
+
                     
                 seq_id, frame_id = self.salsa_loader.dataset.parsePathInfoByIndex(
                     i)

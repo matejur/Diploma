@@ -102,7 +102,9 @@ class Trainer(object):
             data_config_path = "../../pc_processor/dataset/semantic_kitti/semantic-kitti.yaml"
             trainset = pc_processor.dataset.semantic_kitti.SemanticKitti(
                 root=self.settings.data_root,
-                sequences=[4], #sequences=[0,1,2,3,4,5,6,7,9,10],
+                #sequences=[4], 
+                #sequences=[0,1,2,3,4,5,6,7,9,10],
+                sequences=[0,2,4,6],
                 config_path=data_config_path
             )
             self.cls_weight = 1 / (trainset.cls_freq + 1e-3)
@@ -118,7 +120,8 @@ class Trainer(object):
 
             valset = pc_processor.dataset.semantic_kitti.SemanticKitti(
                 root=self.settings.data_root,
-                sequences=[3], # was 8
+                #sequences=[3], 
+                sequences=[8],
                 config_path=data_config_path
             )
 
@@ -341,7 +344,7 @@ class Trainer(object):
                 self.aux_scheduler.step()
 
             else:
-                with torch.no_grad():
+                with torch.inference_mode():
                     lidar_pred, camera_pred = self.model(pcd_feature, img_feature)
 
                     lidar_pred_log = torch.log(lidar_pred.clamp(min=1e-8))
@@ -381,7 +384,7 @@ class Trainer(object):
 
             # # check output
             # measure accuracy and record loss
-            with torch.no_grad():
+            with torch.inference_mode():
                 # compute iou and acc
                 argmax = lidar_pred.argmax(dim=1)
                 self.metrics.addBatch(argmax, input_label)
