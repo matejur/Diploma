@@ -124,8 +124,8 @@ class PerspectiveViewLoader(Dataset):
         proj_mask_tensor = torch.from_numpy(proj_mask)
 
         proj_tensor = torch.cat(
-            (proj_depth_tensor.unsqueeze(0),
-             proj_xyzi_tensor.permute(2, 0, 1),
+            (proj_xyzi_tensor.permute(2, 0, 1),
+             proj_depth_tensor.unsqueeze(0),
              image_tensor.permute(2, 0, 1),
              proj_mask_tensor.float().unsqueeze(0),
              proj_label_tensor.float().unsqueeze(0)), dim=0)
