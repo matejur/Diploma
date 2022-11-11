@@ -56,6 +56,7 @@ class Option(object):
         # --------------------------- checkpoit model ----------------------
         self.checkpoint = self.config["checkpoint"]
         self.pretrained_model = self.config["pretrained_model"]
+        self.pretrained_transformer = self.config["pretrained_transformer"]
 
         self._prepare()
 

@@ -11,11 +11,12 @@ import torch.nn.functional as F
 
 
 class Trainer(object):
-    def __init__(self, settings: Option, model: nn.Module, recorder=None):
+    def __init__(self, settings: Option, model: nn.Module, lidar_encoder: nn.Module, recorder=None):
         # init params
         self.settings = settings
         self.recorder = recorder
         self.model = model.cuda()
+        self.lidar_encoder = lidar_encoder.cuda()
         self.remain_time = pc_processor.utils.RemainTime(
             self.settings.n_epochs)
 
@@ -27,10 +28,12 @@ class Trainer(object):
     
         # init optimizer
 
-        [self.optimizer, self.aux_optimizer] = self._initOptimizer()
+        [self.transformer_optimizer, self.optimizer] = self._initOptimizer()
 
         # set multi gpu
+        # TODO: multi gpu
         if self.settings.n_gpus > 1:
+            raise NotImplementedError("multi gpu is not implemented yet")
             if self.settings.distributed:
                 # sync bn
                 self.model = pc_processor.layers.sync_bn.replaceBN(
@@ -67,7 +70,7 @@ class Trainer(object):
             max_steps=len(self.train_loader) * (self.settings.n_epochs-self.settings.warmup_epochs))
 
         self.aux_scheduler = pc_processor.utils.WarmupCosineLR(
-            optimizer=self.aux_optimizer,
+            optimizer=self.transformer_optimizer,
             lr=self.settings.lr,
             warmup_steps=self.settings.warmup_epochs *
             len(self.train_loader),
@@ -79,15 +82,20 @@ class Trainer(object):
     # ------------------------------------------------------------------
     def _initOptimizer(self):
         # check params
-        adam_params = [{"params": self.model.fusion.parameters()}]
+        # adam_params = [{"params": self.model.fusion.parameters()}]
 
-        adam_opt = torch.optim.AdamW(
-            params=adam_params, lr=self.settings.lr)
+        # adam_opt = torch.optim.AdamW(
+        #     params=adam_params, lr=self.settings.lr)
+
+        transformer_params = [{"params": self.lidar_encoder.parameters()}]
+        transformer_opt = torch.optim.SGD(
+            params=transformer_params, lr=self.settings.lr,
+            momentum=self.settings.momentum,
+            weight_decay=self.settings.weight_decay)
 
         sgd_params = [
             {"params": self.model.camera_stream_encoder.parameters()},
             {"params": self.model.camera_stream_decoder.parameters()},
-            {"params": self.model.point_transformer.parameters()},
             {"params": self.model.fusion.parameters()}
         ]
 
@@ -96,7 +104,7 @@ class Trainer(object):
             nesterov=True,
             momentum=self.settings.momentum,
             weight_decay=self.settings.weight_decay)
-        optimizer = [adam_opt, sgd_opt]
+        optimizer = [transformer_opt, sgd_opt]
 
         return optimizer
 
@@ -197,6 +205,9 @@ class Trainer(object):
         criterion["lovasz"] = pc_processor.loss.Lovasz_softmax(ignore=0)
 
         criterion["kl_loss"] = nn.KLDivLoss(reduction="none")
+
+        # from original point transformer paper
+        criterion["point_transformer"] = nn.CrossEntropyLoss(ignore_index=0)
         
         if self.settings.dataset == "SemanticKitti":
             alpha = np.log(1+self.cls_weight)
@@ -218,12 +229,15 @@ class Trainer(object):
     # functions for running
     # -------------------------------------------------------------------------
 
-    def _backward(self, loss):
+    def _backward(self, loss, transformer_loss):
         self.optimizer.zero_grad()
-        self.aux_optimizer.zero_grad()
+        self.transformer_optimizer.zero_grad()
+
         loss.backward()
-        #self.optimizer.step()
-        self.aux_optimizer.step()
+        transformer_loss.backward()
+
+        self.optimizer.step()
+        self.transformer_optimizer.step()
 
     def _computeClassifyLoss(self, pred, label, label_mask):
 
@@ -263,12 +277,14 @@ class Trainer(object):
         if mode == "Train":
             dataloader = self.train_loader
             self.model.train()
+            self.lidar_encoder.train()
             if self.settings.distributed:
                 self.train_sampler.set_epoch(epoch)
 
         elif mode == "Validation":
             dataloader = self.val_loader
             self.model.eval()
+            self.lidar_encoder.eval()
         else:
             raise ValueError("invalid mode: {}".format(mode))
 
@@ -306,51 +322,31 @@ class Trainer(object):
             input_label = input_label.cuda().long()
             label_mask = input_label.gt(0)
 
+            # to spremen da bo delalo na predprocesorju
+            pxo = pcd_feature.permute(0, 2, 3, 1)
+            pxo = pxo[label_mask]
+            target = input_label[label_mask]
+
+            if target.shape[-1] == 1:
+                target = target[:, 0]
+
+            xyz = pxo[:, :3].contiguous()
+            feat = pxo[:, 3:].contiguous()
+            offset = torch.tensor([xyz.shape[0]], dtype=torch.int32, device=xyz.device)
+
             # forward propergation
             if mode == "Train":
-                lidar_pred, camera_pred = self.model(pcd_feature, img_feature, label_mask)
+                # seperately train the lidar encoder
+                encoded_lidar = self.lidar_encoder([xyz, feat, offset])
+                transformer_loss = self.criterion["point_transformer"](encoded_lidar, target)
 
-                import matplotlib.pyplot as plt
-
-                image = camera_pred.argmax(1).permute(1, 2, 0).cpu().numpy()
-                plt.subplot(3,1,1)
-                plt.imshow(image)
-
-                lidar = lidar_pred.argmax(1).permute(1, 2, 0).cpu().numpy()
-                plt.subplot(3,1,2)
-                plt.imshow(lidar)
-
-                plt.subplot(3,1,3)
-                plt.imshow(img_feature[0].permute(1, 2, 0).cpu().numpy())
-                plt.show()
-                exit()
+                lidar_pred, camera_pred = self.model(encoded_lidar.detach(), img_feature, label_mask)
 
                 lidar_pred_log = torch.log(lidar_pred.clamp(min=1e-8))
 
                 # compute pcd entropy: p * log p
                 pcd_entropy = -(lidar_pred * lidar_pred_log).sum(1) / \
                     math.log(self.settings.nclasses)
-
-                if pcd_entropy.isnan().any():
-                    print("ENTROPY IS NAN")
-                    print(lidar_pred.max())
-                    print(lidar_pred.min())
-                    print(lidar_pred.isnan().any())
-                    print(camera_pred.max())
-                    print(camera_pred.min())
-                    
-                    saved_path = os.path.join(
-                        self.recorder.checkpoint_path, "checkpoint.pth")
-                    checkpoint_data = {
-                        "model": self.model.state_dict(),
-                        "optimizer": self.optimizer.state_dict(),
-                        "aux_optimizer": self.aux_optimizer.state_dict(),
-                        "epoch": epoch,
-                    }
-                    torch.save(checkpoint_data, saved_path)
-
-                    exit()
-
 
                 loss_lov, loss_foc = self._computeClassifyLoss(
                     pred=lidar_pred, label=input_label, label_mask=label_mask)
@@ -380,14 +376,17 @@ class Trainer(object):
                     total_loss = total_loss.mean()
 
                 # backward
-                self._backward(total_loss)
+                self._backward(total_loss, transformer_loss)
                 # update lr after backward (required by pytorch)
                 self.scheduler.step()
                 self.aux_scheduler.step()
 
             else:
                 with torch.inference_mode():
-                    lidar_pred, camera_pred = self.model(pcd_feature, img_feature, label_mask)
+                    encoded_lidar = self.lidar_encoder([xyz, feat, offset])
+                    transformer_loss = self.criterion["point_transformer"](encoded_lidar, target)
+
+                    lidar_pred, camera_pred = self.model(encoded_lidar, img_feature, label_mask)
 
                     lidar_pred_log = torch.log(lidar_pred.clamp(min=1e-8))
                     # compute pcd entropy: p * log p
@@ -475,6 +474,7 @@ class Trainer(object):
                 log_str += "ImgAcc {:0.4f} ImgIOU {:0.4F} ImgRecall {:0.4f} ImgEntropy {:0.4f} ".format(
                     mean_acc_img.item(), mean_iou_img.item(), mean_recall_img.item(), entropy_img_meter.avg)
                 log_str += "RT {}".format(remain_time)
+                log_str += f"   Transformer loss {transformer_loss.item()}"
                 self.recorder.logger.info(log_str)
 
             if self.settings.is_debug:

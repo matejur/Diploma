@@ -39,9 +39,11 @@ class Experiment(object):
             imagenet_pretrained=self.settings.imagenet_pretrained
         )
 
+        self.lidar_encoder = pc_processor.models.pointtransformer_seg_repro(pcd_channels=5, num_classes=self.settings.nclasses)
+
         # init trainer
         self.trainer = trainer.Trainer(
-            self.settings, self.model, self.recorder)
+            self.settings, self.model, self.lidar_encoder, self.recorder)
         # load checkpoint
         self._loadCheckpoint()
 
@@ -63,6 +65,22 @@ class Experiment(object):
                 else:
                     print("diff key: ", k)
             self.model.load_state_dict(new_state_dict)
+
+
+            state_dict = torch.load(
+                self.settings.pretrained_transformer, map_location="cpu")
+            new_state_dict = self.lidar_encoder.state_dict()
+            for k, v in state_dict.items():
+                if k in new_state_dict.keys():
+                    if new_state_dict[k].size() == v.size():
+                        new_state_dict[k] = v
+                    else:
+                        print("diff size: ", k, v.size())
+                else:
+                    print("diff key: ", k)
+            self.lidar_encoder.load_state_dict(new_state_dict)
+
+
             # self.model.load_state_dict(state_dict)
             if self.recorder is not None:
                 self.recorder.logger.info(
@@ -112,14 +130,20 @@ class Experiment(object):
                             best_val_result[k] = v
                             torch.save(self.model.state_dict(), saved_path)
 
+                            # also save the trained transformer
+                            saved_path = os.path.join(
+                                self.recorder.checkpoint_path, "best_{}_model_transformer.pth".format(k))
+                            torch.save(self.lidar_encoder.state_dict(), saved_path)
+
             # save checkpoint
             if self.recorder is not None:
                 saved_path = os.path.join(
                     self.recorder.checkpoint_path, "checkpoint.pth")
                 checkpoint_data = {
                     "model": self.model.state_dict(),
+                    "point_transformer": self.lidar_encoder.state_dict(),
                     "optimizer": self.trainer.optimizer.state_dict(),
-                    "aux_optimizer": self.trainer.aux_optimizer.state_dict(),
+                    "transformer_optimizer": self.trainer.transformer_optimizer.state_dict(),
                     "epoch": epoch,
                 }
 

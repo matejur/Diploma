@@ -101,7 +101,7 @@ class Inference(object):
 
                 input_label = input_label.long().cuda()
                 # do post process
-                pred_output, _ = self.model(pcd_feature, img_feature)
+                pred_output, _ = self.model(pcd_feature, img_feature, padding_layer(input_label.gt(0)))
                                     
                 # do crop
                 pred_output = pred_output[:, :, h_pad: h_pad +
@@ -129,17 +129,17 @@ class Inference(object):
                 pred_np_origin = self.salsa_loader.dataset.class_map_lut_inv[pred_np]
 
                 if self.settings.has_label:
-                    sem_label, _ = self.salsa_loader.dataset.loadLabelByIndex(
-                        i)
-                    self.evaluator.addBatch(
-                        pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
-
-                    # sem_label = input_label[0][uproj_x_idx, uproj_y_idx]
-                    # sem_label = sem_label.cpu().numpy()
-                    # sem_label = sem_label.reshape((-1)).astype(np.int32)
-
+                    # sem_label, _ = self.salsa_loader.dataset.loadLabelByIndex(
+                    #     i)
                     # self.evaluator.addBatch(
                     #     pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
+
+                    sem_label = input_label[0][uproj_x_idx, uproj_y_idx]
+                    sem_label = sem_label.cpu().numpy()
+                    sem_label = sem_label.reshape((-1)).astype(np.int32)
+
+                    self.evaluator.addBatch(
+                        pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
 
                     
                 seq_id, frame_id = self.salsa_loader.dataset.parsePathInfoByIndex(
@@ -334,14 +334,23 @@ class Experiment(object):
         self.inference = Inference(self.settings, self.model, self.recorder)
 
     def _initModel(self):
-        model = pc_processor.models.PMFNet(
+        # model = pc_processor.models.PMFNet(
+        #     pcd_channels=5,
+        #     img_channels=3,
+        #     nclasses=self.settings.n_classes,
+        #     base_channels=self.settings.base_channels,
+        #     image_backbone=self.settings.img_backbone,
+        #     imagenet_pretrained=self.settings.imagenet_pretrained
+        # )
+
+        model = pc_processor.models.ResPoint(
             pcd_channels=5,
             img_channels=3,
             nclasses=self.settings.n_classes,
-            base_channels=self.settings.base_channels,
             image_backbone=self.settings.img_backbone,
             imagenet_pretrained=self.settings.imagenet_pretrained
         )
+
         return model
 
     def _loadCheckpoint(self):

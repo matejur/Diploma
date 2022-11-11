@@ -4,7 +4,7 @@ seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 4
-experiment_id: "point_transformer"
+experiment_id: "testing"
 
 # data conifg
 val_only: false
@@ -34,6 +34,7 @@ tau: 0.7 # confidence threshold
 checkpoint: null
 #pretrained_model: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_baseline_timestamp/checkpoint/best_IOU_model.pth"
 pretrained_model: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_point_transformer/checkpoint/best_IOU_model.pth"
+pretrained_transformer: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_point_transformer/checkpoint/best_IOU_model_transformer.pth"
 
 ### data augmentation config ---------------------
 augmentation:

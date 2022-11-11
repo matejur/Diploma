@@ -173,6 +173,6 @@ class PointTransformerSeg(nn.Module):
         return x
 
 
-def pointtransformer_seg_repro(**kwargs):
-    model = PointTransformerSeg(PointTransformerBlock, [2, 3, 4, 6, 3], **kwargs)
+def pointtransformer_seg_repro(pcd_channels, num_classes):
+    model = PointTransformerSeg(PointTransformerBlock, [2, 3, 4, 6, 3], c=pcd_channels, k=num_classes)
     return model
