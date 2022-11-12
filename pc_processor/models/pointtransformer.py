@@ -23,16 +23,35 @@ class PointTransformerLayer(nn.Module):
         
     def forward(self, pxo) -> torch.Tensor:
         p, x, o = pxo  # (n, 3), (n, c), (b)
-        x_q, x_k, x_v = self.linear_q(x), self.linear_k(x), self.linear_v(x)  # (n, c)
-        x_k = pointops.queryandgroup(self.nsample, p, p, x_k, None, o, o, use_xyz=True)  # (n, nsample, 3+c)
-        x_v = pointops.queryandgroup(self.nsample, p, p, x_v, None, o, o, use_xyz=False)  # (n, nsample, c)
-        p_r, x_k = x_k[:, :, 0:3], x_k[:, :, 3:]
-        for i, layer in enumerate(self.linear_p): p_r = layer(p_r.transpose(1, 2).contiguous()).transpose(1, 2).contiguous() if i == 1 else layer(p_r)    # (n, nsample, c)
-        w = x_k - x_q.unsqueeze(1) + p_r.view(p_r.shape[0], p_r.shape[1], self.out_planes // self.mid_planes, self.mid_planes).sum(2)  # (n, nsample, c)
-        for i, layer in enumerate(self.linear_w): w = layer(w.transpose(1, 2).contiguous()).transpose(1, 2).contiguous() if i % 3 == 0 else layer(w)
+
+        # Calculate the query, key and value vectors, size (n, out_planes)
+        x_query = self.linear_q(x)
+        x_key = self.linear_k(x)
+        x_value = self.linear_v(x)
+
+        # Use kNN to group the points
+        x_key = pointops.queryandgroup(self.nsample, p, p, x_key, None, o, o, use_xyz=True)  # (n, nsample, 3+c)
+        x_value = pointops.queryandgroup(self.nsample, p, p, x_value, None, o, o, use_xyz=False)  # (n, nsample, c)
+
+        p_r = x_key[:, :, 0:3]
+        x_key = x_key[:, :, 3:]
+
+        # Positional encoding
+        for i, layer in enumerate(self.linear_p):
+            p_r = layer(p_r.transpose(1, 2).contiguous()).transpose(1, 2).contiguous() if i == 1 else layer(p_r)    # (n, nsample, c)
+        
+        # Calculate the attention weights
+        w = x_key - x_query.unsqueeze(1) + p_r.view(p_r.shape[0], p_r.shape[1], self.out_planes // self.mid_planes, self.mid_planes).sum(2)  # (n, nsample, c)
+
+        for i, layer in enumerate(self.linear_w):
+            w = layer(w.transpose(1, 2).contiguous()).transpose(1, 2).contiguous() if i % 3 == 0 else layer(w)
+
         w = self.softmax(w)  # (n, nsample, c)
-        n, nsample, c = x_v.shape; s = self.share_planes
-        x = ((x_v + p_r).view(n, nsample, s, c // s) * w.unsqueeze(2)).sum(1).view(n, c)
+        n, nsample, c = x_value.shape
+        s = self.share_planes
+
+        x = ((x_value + p_r).view(n, nsample, s, c // s) * w.unsqueeze(2)).sum(1).view(n, c)
+
         return x
 
 
