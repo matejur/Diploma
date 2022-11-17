@@ -4,7 +4,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision.models.resnet import resnet34, resnet50, resnet101, resnet152
+from torchvision.models.resnet import resnet34, resnet50, resnet101, resnet152, ResNet34_Weights, ResNet50_Weights, ResNet101_Weights, ResNet152_Weights
 from .salsanext import SalsaNext
 
 class ResidualBasedFusionBlock(nn.Module):
@@ -47,16 +47,16 @@ class ResNet(nn.Module):
         # Encoder
         # ----------------------------------------------------------------------------- #
         if backbone == "resnet34":
-            net = resnet34(pretrained)
+            net = resnet34(weights=ResNet34_Weights.DEFAULT if pretrained else None)
             self.expansion = 1
         elif backbone == "resnet50":
-            net = resnet50(pretrained)
+            net = resnet50(weights=ResNet50_Weights.DEFAULT if pretrained else None)
             self.expansion = 4
         elif backbone == "resnet101":
-            net = resnet101(pretrained)
+            net = resnet101(weights=ResNet101_Weights.DEFAULT if pretrained else None)
             self.expansion = 4
         elif backbone == "resnet152":
-            net = resnet152(pretrained)
+            net = resnet152(weights=ResNet152_Weights.DEFAULT if pretrained else None)
             self.expansion = 4
         else:
             raise NotImplementedError("invalid backbone: {}".format(backbone))

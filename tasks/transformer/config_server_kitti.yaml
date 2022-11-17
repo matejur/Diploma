@@ -3,14 +3,14 @@ save_path: "../../experiments/PMF-SemanticKitti/"
 seed: 1
 gpu: "0"
 print_frequency: 2
-n_threads: 4
+n_threads: 6
 experiment_id: "cross-attention-1"
 
 # data conifg
 val_only: false
 has_label: true
 is_debug: false
-n_epochs: 5 # was 50
+n_epochs: 10 # was 50
 batch_size: [1, 1]
 lr: 0.001
 warmup_epochs: 1
@@ -31,7 +31,8 @@ gamma: 0.5 # weight of perception-aware loss
 tau: 0.7 # confidence threshold
 
 # cehckpoint model
-checkpoint: null
+# checkpoint: null
+checkpoint: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_cross-attention-1/checkpoint/checkpoint.pth"
 pretrained_model: null 
 
 ### data augmentation config ---------------------

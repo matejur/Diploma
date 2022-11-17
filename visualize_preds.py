@@ -7,13 +7,13 @@ config = yaml.safe_load(open("tasks/pmf/config_server_kitti.yaml", "r"))
 
 valset = pc_processor.dataset.semantic_kitti.SemanticKitti(
     root="../datasets/broken-kitti/sequences/",
-    sequences=[9], #sequences=[0,1,2,3,4,5,6,7,9,10],
+    sequences=[8], #sequences=[0,1,2,3,4,5,6,7,9,10],
     config_path="pc_processor/dataset/semantic_kitti/semantic-kitti.yaml",
     has_label = True,
     has_image=True
 )
 
-val_pv_loader = pc_processor.dataset.PerspectiveViewLoader(
+val_pv_loader = pc_processor.dataset.PerspectiveViewLoaderTransformer(
     dataset=valset,
     config=config,
     is_train=False,
@@ -43,11 +43,8 @@ pmf.cuda()
 pmf.eval()
 print("Loaded PMF model")
 
-best_respoint_model_path = "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_point_transformer/checkpoint/best_IOU_model.pth"
-respoint =  pc_processor.models.ResPoint(
-    pcd_channels=5,
-    img_channels=3,
-    nclasses=20,
+best_respoint_model_path = "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_cross-attention-1/checkpoint/best_IOU_model.pth"
+respoint =  pc_processor.models.TransFusion(
     image_backbone="resnet34",
     imagenet_pretrained=True
 )
@@ -56,14 +53,6 @@ respoint.load_state_dict(state_dict)
 respoint.cuda()
 respoint.eval()
 print("LOADED RESPOINT")
-
-best_transformer = "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_point_transformer/checkpoint/best_IOU_model_transformer.pth"
-transformer = pc_processor.models.pointtransformer_seg_repro(pcd_channels=5, num_classes=20)
-state_dict = torch.load(best_transformer, map_location="cpu")
-transformer.load_state_dict(state_dict)
-transformer.cuda()
-transformer.eval()
-print("LOADED TRANSFORMER")
 
 
 import matplotlib.pyplot as plt
@@ -96,52 +85,19 @@ with torch.inference_mode():
 
     #     input_label = input_label.long().cuda()
     
-    for i, (input_feature, input_mask, input_label) in enumerate(val_loader):
-        input_feature = input_feature.cuda()
-        input_mask = input_mask.cuda()
-        input_feature[:, 0:5] = (
-            input_feature[:, 0:5] - feature_mean) / feature_std * \
-            input_mask.unsqueeze(1).expand_as(input_feature[:, 0:5])
-        pcd_feature = input_feature[:, 0:5]
-        img_feature = input_feature[:, 5:8]
+    for i, (image, pointcloud, input_label) in enumerate(val_loader):
+        image = image.cuda()
+        pointcloud = pointcloud.cuda()
         input_label = input_label.cuda().long()
         label_mask = input_label.gt(0)
 
-        # to spremen da bo delalo na predprocesorju
-        pxo = pcd_feature.permute(0, 2, 3, 1)
-        pxo = pxo[label_mask]
-        target = input_label[label_mask]
+        preds = respoint(image, pointcloud)
 
-        if target.shape[-1] == 1:
-            target = target[:, 0]
-
-        xyz = pxo[:, :3].contiguous()
-        feat = pxo[:, 3:].contiguous()
-        offset = torch.tensor([xyz.shape[0]], dtype=torch.int32, device=xyz.device)
-
-        pmf_lidar, pmf_image = pmf(pcd_feature, img_feature)
-
-        encoded_lidar = transformer([xyz, feat, offset])
-
-        respoint_lidar, respoint_image = respoint(encoded_lidar, img_feature, label_mask)
-
-        plt.subplot(2,2,1)
-        plt.imshow(pmf_lidar[0].argmax(0).cpu().numpy())
-        plt.title("PMF Lidar")
-        plt.axis(False)
-
-        plt.subplot(2,2,2)
-        plt.imshow(pmf_image[0].argmax(0).cpu().numpy())
-        plt.title("PMF Image")
-        plt.axis(False)
-
-        plt.subplot(2,2,3)
-        plt.imshow(respoint_lidar[0].argmax(0).cpu().numpy())
-        plt.title("ResPoint Lidar")
-        plt.axis(False)
-
-        plt.subplot(2,2,4)
-        plt.imshow(respoint_image[0].argmax(0).cpu().numpy())
-        plt.title("ResPoint Image")
-        plt.axis(False)
+        plt.subplot(3, 1, 1)
+        plt.imshow(image[0].permute(1,2,0).cpu().detach().numpy())
+        plt.subplot(3, 1, 2)
+        plt.imshow(preds[0].cpu().detach().numpy().argmax(axis=2))
+        plt.subplot(3, 1, 3)
+        plt.imshow(input_label[0].cpu().detach().numpy())
         plt.show()
+        exit()

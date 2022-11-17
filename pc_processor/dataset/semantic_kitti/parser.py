@@ -246,7 +246,7 @@ class SemanticKitti(object):
     def loadImage(self, index):
         return Image.open(self.image_files[index])
 
-    def mapLidar2Camera(self, seq, pointcloud, img_h, img_w):
+    def mapLidar2Camera(self, seq, pointcloud, img_h, img_w, crop_offset=None):
         if not self.has_image:
             raise ValueError("cannot mappint pointcloud with has_image=False")
 
@@ -259,6 +259,11 @@ class SemanticKitti(object):
         # scale 2D points
         mapped_points = mapped_points[:, :2] / \
                         np.expand_dims(mapped_points[:, 2], axis=1)  # n, 2
+
+        if crop_offset is not None:
+            mapped_points[:, 0] -= crop_offset[0]
+            mapped_points[:, 1] -= crop_offset[1]
+        
         keep_idx_pts = (mapped_points[:, 0] > 0) * (mapped_points[:, 0] < img_h) * (
                 mapped_points[:, 1] > 0) * (mapped_points[:, 1] < img_w)
         keep_mask[keep_mask] = keep_idx_pts

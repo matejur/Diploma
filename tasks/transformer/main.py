@@ -31,11 +31,9 @@ class Experiment(object):
 
         self.epoch_start = 0
         # init model
-        self.model = pc_processor.models.PMFNet(
-            pcd_channels=5,
+        self.model = pc_processor.models.TransFusion(
             img_channels=3,
             nclasses=self.settings.nclasses,
-            base_channels=self.settings.base_channels,
             image_backbone=self.settings.img_backbone,
             imagenet_pretrained=self.settings.imagenet_pretrained
         )
@@ -78,8 +76,6 @@ class Experiment(object):
             self.model.load_state_dict(checkpoint_data["model"])
             self.trainer.optimizer.load_state_dict(
                 checkpoint_data["optimizer"])
-            self.trainer.aux_optimizer.load_state_dict(
-                checkpoint_data["aux_optimizer"])
             self.epoch_start = checkpoint_data["epoch"] + 1
 
     def run(self):
@@ -120,7 +116,6 @@ class Experiment(object):
                 checkpoint_data = {
                     "model": self.model.state_dict(),
                     "optimizer": self.trainer.optimizer.state_dict(),
-                    "aux_optimizer": self.trainer.aux_optimizer.state_dict(),
                     "epoch": epoch,
                 }
 
