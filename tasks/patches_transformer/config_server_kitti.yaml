@@ -4,13 +4,13 @@ seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 6
-experiment_id: "cross-attention-quarter-resolution"
+experiment_id: "patches_transformer"
 
 # data conifg
 val_only: false
 has_label: true
 is_debug: false
-n_epochs: 10 # was 50
+n_epochs: 5 # was 50
 batch_size: [1, 1]
 lr: 0.001
 warmup_epochs: 1

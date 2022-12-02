@@ -274,6 +274,7 @@ class Trainer(object):
         return loss_per, pcd_guide_weight, img_guide_weight
 
     def run(self, epoch, mode="Train"):
+        raise NotImplementedError("Pos and feat are not right order, check perspective view loader")
         if mode == "Train":
             dataloader = self.train_loader
             self.model.train()
