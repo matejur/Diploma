@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from .pmf_net import ResNet
+from .pmf_net import ResNet, RGBDecoder
 
 # Global Multi Head Self Attention, adapted from https://github.com/makeesyai/makeesy-deep-learning/blob/main/self_attention/multiheaded_attention_optimized.py
 # Computes attention globally across the image, using patches as "words"
@@ -142,7 +142,7 @@ class GlobalTransformerLayer(nn.Module):
 
 
 class LidarRGBFusion(nn.Module):
-    def __init__(self, img_channels=3, pcd_channels=5, nclasses=20, imagenet_pretrained=True, image_backbone="resnet34"):
+    def __init__(self, img_channels=3, pcd_channels=5, nclasses=20, imagenet_pretrained=True, image_backbone="resnet34", image_out=True):
         super(LidarRGBFusion, self).__init__()
 
         self.camera_encoder = ResNet(
@@ -150,6 +150,8 @@ class LidarRGBFusion(nn.Module):
             pretrained=imagenet_pretrained,
             backbone=image_backbone
         )
+
+        self.image_out = image_out
 
         self.pcd_channels = pcd_channels
         self.nclasses = nclasses
@@ -189,12 +191,18 @@ class LidarRGBFusion(nn.Module):
             nn.Linear(32, nclasses)
         )
 
+        if image_out:
+            self.camera_decoder = RGBDecoder(
+                self.camera_encoder.feature_channels, 
+                nclasses=nclasses, base_channels=self.camera_encoder.expansion*16)
+
     def forward(self, img, pcd):
-        import time
         img_features = self.camera_encoder(img)
 
-        # Patchify pcd into 16x16 patches
+        # Patchify pcd into n*n patches
         n = self.lidar_patch_size
+        
+        # tale unfold se da lepš -> glej SWIN
         local_patches = pcd.unfold(2, n, n).unfold(3, n, n)
         unfold_shape = local_patches.shape
 
@@ -231,6 +239,11 @@ class LidarRGBFusion(nn.Module):
         # import matplotlib.pyplot as plt
         # plt.imshow(output[0].argmax(0).detach().cpu().numpy())
         # plt.show()
+
+        if self.image_out:
+            imgs = self.camera_decoder(img_features)
+
+            return output, imgs
 
         return output
     

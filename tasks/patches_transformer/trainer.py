@@ -196,26 +196,26 @@ class Trainer(object):
             return train_loader, val_loader, None, None
 
     def _initCriterion(self):
-        # criterion = {}
-        # criterion["lovasz"] = pc_processor.loss.Lovasz_softmax(ignore=0)
+        criterion = {}
+        criterion["lovasz"] = pc_processor.loss.Lovasz_softmax(ignore=0)
 
-        # criterion["kl_loss"] = nn.KLDivLoss(reduction="none")
+        criterion["kl_loss"] = nn.KLDivLoss(reduction="none")
         
-        # if self.settings.dataset == "SemanticKitti":
-        #     alpha = np.log(1+self.cls_weight)
-        #     alpha = alpha / alpha.max()
-        # elif self.settings.dataset == "nuScenes":
-        #     alpha = np.ones((self.settings.nclasses))
-        # alpha[0] = 0
-        # if self.recorder is not None:
-        #     self.recorder.logger.info("focal_loss alpha: {}".format(alpha))
-        # criterion["focal_loss"] = pc_processor.loss.FocalSoftmaxLoss(
-        #     self.settings.nclasses, gamma=2, alpha=alpha, softmax=False)
+        if self.settings.dataset == "SemanticKitti":
+            alpha = np.log(1+self.cls_weight)
+            alpha = alpha / alpha.max()
+        elif self.settings.dataset == "nuScenes":
+            alpha = np.ones((self.settings.nclasses))
+        alpha[0] = 0
+        if self.recorder is not None:
+            self.recorder.logger.info("focal_loss alpha: {}".format(alpha))
+        criterion["focal_loss"] = pc_processor.loss.FocalSoftmaxLoss(
+            self.settings.nclasses, gamma=2, alpha=alpha, softmax=False)
        
-        # # set device
-        # for _, v in criterion.items():
-        #     v.cuda()
-        criterion = nn.CrossEntropyLoss(ignore_index=0).cuda()
+        # set device
+        for _, v in criterion.items():
+            v.cuda()
+        #criterion = nn.CrossEntropyLoss(ignore_index=0).cuda()
         return criterion
 
     # -------------------------------------------------------------------------
@@ -227,38 +227,38 @@ class Trainer(object):
         loss.backward()
         self.optimizer.step()
 
-    # def _computeClassifyLoss(self, pred, label, label_mask):
+    def _computeClassifyLoss(self, pred, label, label_mask):
 
-    #     loss_foc = self.criterion["focal_loss"](
-    #         pred, label, mask=label_mask)
+        loss_foc = self.criterion["focal_loss"](
+            pred, label, mask=label_mask)
 
-    #     loss_lov = self.criterion["lovasz"](
-    #         pred, label)
+        loss_lov = self.criterion["lovasz"](
+            pred, label)
             
-    #     return loss_lov, loss_foc
+        return loss_lov, loss_foc
 
-    # def _computePerceptionAwareLoss(
-    #         self, pcd_entropy, img_entropy,
-    #         pcd_pred, pcd_pred_log, img_pred, img_pred_log):
+    def _computePerceptionAwareLoss(
+            self, pcd_entropy, img_entropy,
+            pcd_pred, pcd_pred_log, img_pred, img_pred_log):
 
-    #     pcd_confidence = 1 - pcd_entropy
-    #     img_confidence = 1 - img_entropy
-    #     information_importance = pcd_confidence - img_confidence
-    #     pcd_guide_mask = pcd_confidence.ge(self.settings.tau).float()
-    #     img_guide_mask = img_confidence.ge(self.settings.tau).float()
+        pcd_confidence = 1 - pcd_entropy
+        img_confidence = 1 - img_entropy
+        information_importance = pcd_confidence - img_confidence
+        pcd_guide_mask = pcd_confidence.ge(self.settings.tau).float()
+        img_guide_mask = img_confidence.ge(self.settings.tau).float()
 
-    #     pcd_guide_weight = information_importance.gt(0).float(
-    #     ) * information_importance.abs() * pcd_guide_mask 
-    #     img_guide_weight = information_importance.lt(0).float(
-    #     ) * information_importance.abs() * img_guide_mask
+        pcd_guide_weight = information_importance.gt(0).float(
+        ) * information_importance.abs() * pcd_guide_mask 
+        img_guide_weight = information_importance.lt(0).float(
+        ) * information_importance.abs() * img_guide_mask
 
-    #     # compute kl loss
-    #     loss_per_pcd = (self.criterion["kl_loss"](
-    #         pcd_pred_log, img_pred) * img_guide_weight.unsqueeze(1)).mean()
-    #     loss_per_img = (self.criterion["kl_loss"](
-    #         img_pred_log, pcd_pred) * pcd_guide_weight.unsqueeze(1)).mean()
-    #     loss_per = loss_per_pcd + loss_per_img
-    #     return loss_per, pcd_guide_weight, img_guide_weight
+        # compute kl loss
+        loss_per_pcd = (self.criterion["kl_loss"](
+            pcd_pred_log, img_pred) * img_guide_weight.unsqueeze(1)).mean()
+        loss_per_img = (self.criterion["kl_loss"](
+            img_pred_log, pcd_pred) * pcd_guide_weight.unsqueeze(1)).mean()
+        loss_per = loss_per_pcd + loss_per_img
+        return loss_per, pcd_guide_weight, img_guide_weight
 
     def run(self, epoch, mode="Train"):
         if mode == "Train":
@@ -309,16 +309,38 @@ class Trainer(object):
 
             # forward propergation
             if mode == "Train":
-                preds = self.model(img_feature, pcd_feature)
+                lidar_pred, camera_pred = self.model(img_feature, pcd_feature)
 
-                # import matplotlib.pyplot as plt
-                # plt.subplot(2,1,1)
-                # plt.imshow(preds[0].cpu().detach().numpy().argmax(0))
-                # plt.subplot(2,1,2)
-                # plt.imshow(input_label[0].cpu().detach().numpy())
-                # plt.show()
-                # compute loss
-                total_loss = self.criterion(preds.permute(0,2,3,1)[label_mask], input_label[label_mask])
+                lidar_pred = F.softmax(lidar_pred, dim=1)
+
+                lidar_pred_log = torch.log(lidar_pred.clamp(min=1e-8))
+                # compute pcd entropy: p * log p
+                pcd_entropy = -(lidar_pred * lidar_pred_log).sum(1) / \
+                    math.log(self.settings.nclasses)
+
+                loss_lov, loss_foc = self._computeClassifyLoss(
+                    pred=lidar_pred, label=input_label, label_mask=label_mask)
+
+                # compute img entropy
+                camera_pred_log = torch.log(
+                    camera_pred.clamp(min=1e-8))
+                # normalize to [0,1)
+                img_entropy = - \
+                    (camera_pred * camera_pred_log).sum(1) / \
+                    math.log(self.settings.nclasses)
+
+                loss_lov_cam, loss_foc_cam = self._computeClassifyLoss(
+                    pred=camera_pred, label=input_label, label_mask=label_mask)
+
+                loss_per, pcd_guide_weight, img_guide_weight = self._computePerceptionAwareLoss(
+                    pcd_entropy=pcd_entropy, img_entropy=img_entropy,
+                    pcd_pred=lidar_pred, pcd_pred_log=lidar_pred_log,
+                    img_pred=camera_pred, img_pred_log=camera_pred_log
+                )
+
+                total_loss = loss_foc + loss_lov * self.settings.lambda_ + \
+                     loss_foc_cam + loss_lov_cam * self.settings.lambda_ + \
+                     loss_per * self.settings.gamma
 
                 if self.settings.n_gpus > 1:
                     total_loss = total_loss.mean()
@@ -331,10 +353,38 @@ class Trainer(object):
 
             else:
                 with torch.inference_mode():
-                    preds = self.model(img_feature, pcd_feature)
+                    lidar_pred, camera_pred = self.model(img_feature, pcd_feature)
 
-                    # compute loss
-                    total_loss = self.criterion(preds.permute(0,2,3,1)[label_mask], input_label[label_mask])
+                    lidar_pred = F.softmax(lidar_pred, dim=1)
+
+                    lidar_pred_log = torch.log(lidar_pred.clamp(min=1e-8))
+                    # compute pcd entropy: p * log p
+                    pcd_entropy = -(lidar_pred * lidar_pred_log).sum(1) / \
+                        math.log(self.settings.nclasses)
+
+                    loss_lov, loss_foc = self._computeClassifyLoss(
+                        pred=lidar_pred, label=input_label, label_mask=label_mask)
+
+                    # compute img entropy
+                    camera_pred_log = torch.log(
+                        camera_pred.clamp(min=1e-8))
+                    # normalize to [0,1)
+                    img_entropy = - \
+                        (camera_pred * camera_pred_log).sum(1) / \
+                        math.log(self.settings.nclasses)
+
+                    loss_lov_cam, loss_foc_cam = self._computeClassifyLoss(
+                        pred=camera_pred, label=input_label, label_mask=label_mask)
+
+                    loss_per, pcd_guide_weight, img_guide_weight = self._computePerceptionAwareLoss(
+                        pcd_entropy=pcd_entropy, img_entropy=img_entropy,
+                        pcd_pred=lidar_pred, pcd_pred_log=lidar_pred_log,
+                        img_pred=camera_pred, img_pred_log=camera_pred_log
+                    )
+
+                    total_loss = loss_foc + loss_lov * self.settings.lambda_ + \
+                        loss_foc_cam + loss_lov_cam * self.settings.lambda_ + \
+                        loss_per * self.settings.gamma
 
                     if self.settings.n_gpus > 1:
                         total_loss = total_loss.mean()
@@ -346,27 +396,28 @@ class Trainer(object):
             # measure accuracy and record loss
             with torch.inference_mode():
                 # compute iou and acc
-                argmax = preds.argmax(dim=1)
+                argmax = lidar_pred.argmax(dim=1)
                 self.metrics.addBatch(argmax, input_label)
                 mean_iou, class_iou = self.metrics.getIoU()
                 mean_acc, class_acc = self.metrics.getAcc()
                 mean_recall, class_recall = self.metrics.getRecall()
 
-                # argmax_img = camera_pred.argmax(dim=1)
-                # self.metrics_img.addBatch(argmax_img, input_label)
-                # mean_iou_img, class_iou_img = self.metrics_img.getIoU()
-                # mean_acc_img, class_acc_img = self.metrics_img.getAcc()
-                # mean_recall_img, class_recall_img = self.metrics_img.getRecall()
+                argmax_img = camera_pred.argmax(dim=1)
+                self.metrics_img.addBatch(argmax_img, input_label)
+                mean_iou_img, class_iou_img = self.metrics_img.getIoU()
+                mean_acc_img, class_acc_img = self.metrics_img.getAcc()
+                mean_recall_img, class_recall_img = self.metrics_img.getRecall()
 
-            # loss_meter.update(total_loss.item(), input_feature.size(0))
-            # loss_focal_meter.update(loss_foc.item(), input_feature.size(0))
-            # loss_lovasz_meter.update(loss_lov.item(), input_feature.size(0))
-            # entropy_meter.update(pcd_entropy.mean().item(), input_feature.size(0))
+            loss_meter.update(total_loss.item(), input_feature.size(0))
+            loss_focal_meter.update(loss_foc.item(), input_feature.size(0))
+            loss_lovasz_meter.update(loss_lov.item(), input_feature.size(0))
+            entropy_meter.update(pcd_entropy.mean().item(), input_feature.size(0))
 
-            # loss_img_lovasz_meter.update(loss_lov_cam.item(), input_feature.size(0))
-            # loss_img_focal_meter.update(loss_foc_cam.item(), input_feature.size(0))
-            # entropy_img_meter.update(img_entropy.mean().item(), input_feature.size(0))
-            # loss_perception_meter.update(loss_per.item(), input_feature.size(0))
+            loss_img_lovasz_meter.update(loss_lov_cam.item(), input_feature.size(0))
+            loss_img_focal_meter.update(loss_foc_cam.item(), input_feature.size(0))
+            entropy_img_meter.update(img_entropy.mean().item(), input_feature.size(0))
+
+            loss_perception_meter.update(loss_per.item(), input_feature.size(0))
 
             # timer logger ----------------------------------------
             t_process_end = time.time()
@@ -387,8 +438,10 @@ class Trainer(object):
                     break
                 log_str = ">>> {} E[{:03d}|{:03d}] I[{:04d}|{:04d}] DT[{:.3f}] PT[{:.3f}] ".format(
                     mode, self.settings.n_epochs, epoch+1, total_iter, i+1, data_cost_time, process_cost_time)
-                log_str += "LR {:0.5f} Loss {:0.4f} Acc {:0.4f} IOU {:0.4F} Recall {:0.4f} ".format(
-                    lr, loss.item(), mean_acc.item(), mean_iou.item(), mean_recall.item())
+                log_str += "LR {:0.5f} Loss {:0.4f} Acc {:0.4f} IOU {:0.4F} Recall {:0.4f} Entropy {:0.4f} ".format(
+                    lr, loss.item(), mean_acc.item(), mean_iou.item(), mean_recall.item(), entropy_meter.avg)
+                log_str += "ImgAcc {:0.4f} ImgIOU {:0.4F} ImgRecall {:0.4f} ImgEntropy {:0.4f} ".format(
+                    mean_acc_img.item(), mean_iou_img.item(), mean_recall_img.item(), entropy_img_meter.avg)
                 log_str += "RT {}".format(remain_time)
                 self.recorder.logger.info(log_str)
 
