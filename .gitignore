@@ -8,3 +8,4 @@ log_*
 experiments/
 build/
 testing.*
+*.mp4

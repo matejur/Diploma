@@ -11,7 +11,7 @@ import torch.nn.functional as F
 
 
 class Trainer(object):
-    def __init__(self, settings: Option, model: nn.Module, recorder=None):
+    def __init__(self, settings: Option, model: nn.Module, recorder=None, remaining_epochs=0):
         # init params
         self.settings = settings
         self.recorder = recorder
@@ -27,7 +27,7 @@ class Trainer(object):
     
         # init optimizer
 
-        [self.optimizer, self.aux_optimizer] = self._initOptimizer()
+        self.optimizer = self._initOptimizer()
 
         # set multi gpu
         if self.settings.n_gpus > 1:
@@ -58,53 +58,57 @@ class Trainer(object):
             ignore=self.ignore_class, is_distributed=self.settings.distributed)
         self.metrics_img.reset()
 
+        max_steps = len(self.train_loader) * (self.settings.n_epochs-self.settings.warmup_epochs)
+
+        if remaining_epochs:
+            max_steps = len(self.train_loader) * (remaining_epochs-self.settings.warmup_epochs)
+
+        print("max_steps: ", max_steps)
         self.scheduler = pc_processor.utils.WarmupCosineLR(
             optimizer=self.optimizer,
             lr=self.settings.lr,
             warmup_steps=self.settings.warmup_epochs *
             len(self.train_loader),
             momentum=self.settings.momentum,
-            max_steps=len(self.train_loader) * (self.settings.n_epochs-self.settings.warmup_epochs))
+            max_steps=max_steps)
 
-        self.aux_scheduler = pc_processor.utils.WarmupCosineLR(
-            optimizer=self.aux_optimizer,
-            lr=self.settings.lr,
-            warmup_steps=self.settings.warmup_epochs *
-            len(self.train_loader),
-            momentum=self.settings.momentum,
-            max_steps=len(self.train_loader) * (self.settings.n_epochs-self.settings.warmup_epochs))
+        # self.aux_scheduler = pc_processor.utils.WarmupCosineLR(
+        #     optimizer=self.aux_optimizer,
+        #     lr=self.settings.lr,
+        #     warmup_steps=self.settings.warmup_epochs *
+        #     len(self.train_loader),
+        #     momentum=self.settings.momentum,
+        #     max_steps=len(self.train_loader) * (self.settings.n_epochs-self.settings.warmup_epochs))
         
     # ------------------------------------------------------------------
     # functions for initialization
     # ------------------------------------------------------------------
     def _initOptimizer(self):
         # check params
-        adam_params = [{"params": self.model.lidar_stream.parameters()}]
+        adam_params = [{"params": self.model.parameters()}]
 
         adam_opt = torch.optim.AdamW(
-            params=adam_params, lr=self.settings.lr)
+            params=adam_params, lr=self.settings.lr, weight_decay=self.settings.weight_decay)
 
-        sgd_params = [
-            {"params": self.model.camera_stream_encoder.parameters()},
-            {"params": self.model.camera_stream_decoder.parameters()}]
+        # sgd_params = [
+        #     {"params": self.model.parameters()}]
 
-        sgd_opt = torch.optim.SGD(
-            params=sgd_params, lr=self.settings.lr,
-            nesterov=True,
-            momentum=self.settings.momentum,
-            weight_decay=self.settings.weight_decay)
-        optimizer = [adam_opt, sgd_opt]
+        # sgd_opt = torch.optim.SGD(
+        #     params=sgd_params, lr=self.settings.lr,
+        #     nesterov=True,
+        #     momentum=self.settings.momentum,
+        #     weight_decay=self.settings.weight_decay)
 
-        return optimizer
+        return adam_opt
 
     def _initDataloader(self):
         if self.settings.dataset == "SemanticKitti":
             data_config_path = "../../pc_processor/dataset/semantic_kitti/semantic-kitti.yaml"
             trainset = pc_processor.dataset.semantic_kitti.SemanticKitti(
                 root=self.settings.data_root,
-                #sequences=[4], 
+                #sequences=[0], 
                 sequences=[0,1,2,3,4,5,6,7,9,10],
-                #sequences=[0,2,4,6],
+                #sequences=[0,1,2,3],
                 config_path=data_config_path
             )
             self.cls_weight = 1 / (trainset.cls_freq + 1e-3)
@@ -126,6 +130,7 @@ class Trainer(object):
             )
 
         elif self.settings.dataset == "nuScenes":
+            print("Loading trainset")
             trainset = pc_processor.dataset.nuScenes.Nuscenes(
                 root=self.settings.data_root, version="v1.0-trainval", split="train",
             )
@@ -177,7 +182,8 @@ class Trainer(object):
                 batch_size=self.settings.batch_size[0],
                 num_workers=self.settings.n_threads,
                 shuffle=True,
-                drop_last=True)
+                drop_last=True
+            )
 
             val_loader = torch.utils.data.DataLoader(
                 val_pv_loader,
@@ -208,6 +214,7 @@ class Trainer(object):
         # set device
         for _, v in criterion.items():
             v.cuda()
+        #criterion = nn.CrossEntropyLoss(ignore_index=0).cuda()
         return criterion
 
     # -------------------------------------------------------------------------
@@ -216,10 +223,8 @@ class Trainer(object):
 
     def _backward(self, loss):
         self.optimizer.zero_grad()
-        self.aux_optimizer.zero_grad()
         loss.backward()
         self.optimizer.step()
-        self.aux_optimizer.step()
 
     def _computeClassifyLoss(self, pred, label, label_mask):
 
@@ -289,8 +294,6 @@ class Trainer(object):
         feature_std = torch.Tensor(self.settings.config["sensor"]["img_stds"]).unsqueeze(
             0).unsqueeze(2).unsqueeze(2).cuda()
 
-        accum_iter = 8
-
         for i, (input_feature, input_mask, input_label) in enumerate(dataloader):
             t_process_start = time.time()
             input_feature = input_feature.cuda()
@@ -302,7 +305,7 @@ class Trainer(object):
             img_feature = input_feature[:, 5:8]
             input_label = input_label.cuda().long()
             label_mask = input_label.gt(0)
-
+            
             # forward propergation
             if mode == "Train":
                 lidar_pred, camera_pred = self.model(pcd_feature, img_feature)
@@ -343,19 +346,10 @@ class Trainer(object):
                     total_loss = total_loss.mean()
 
                 # backward
-                #self._backward(total_loss)
-                total_loss = total_loss / accum_iter
-                total_loss.backward()
-
-                if (i + 1) % accum_iter == 0 or i == total_iter - 1:
-                    self.optimizer.step()
-                    self.aux_optimizer.step()
-                    self.optimizer.zero_grad()
-                    self.aux_optimizer.zero_grad()
-
+                self._backward(total_loss)
                 # update lr after backward (required by pytorch)
                 self.scheduler.step()
-                self.aux_scheduler.step()
+                #self.aux_scheduler.step()
 
             else:
                 with torch.inference_mode():
@@ -363,7 +357,7 @@ class Trainer(object):
 
                     lidar_pred = lidar_pred.clamp(min=1e-8)
                     camera_pred = camera_pred.clamp(min=1e-8)
-
+                    
                     lidar_pred_log = torch.log(lidar_pred.clamp(min=1e-8))
                     # compute pcd entropy: p * log p
                     pcd_entropy = -(lidar_pred * lidar_pred_log).sum(1) / \
@@ -445,7 +439,7 @@ class Trainer(object):
                     break
                 log_str = ">>> {} E[{:03d}|{:03d}] I[{:04d}|{:04d}] DT[{:.3f}] PT[{:.3f}] ".format(
                     mode, self.settings.n_epochs, epoch+1, total_iter, i+1, data_cost_time, process_cost_time)
-                log_str += "LR {:0.5f} Loss {:0.4f} Acc {:0.4f} IOU {:0.4F} Recall {:0.4f} Entropy {:0.4f} ".format(
+                log_str += "LR {:0.7f} Loss {:0.4f} Acc {:0.4f} IOU {:0.4F} Recall {:0.4f} Entropy {:0.4f} ".format(
                     lr, loss.item(), mean_acc.item(), mean_iou.item(), mean_recall.item(), entropy_meter.avg)
                 log_str += "ImgAcc {:0.4f} ImgIOU {:0.4F} ImgRecall {:0.4f} ImgEntropy {:0.4f} ".format(
                     mean_acc_img.item(), mean_iou_img.item(), mean_recall_img.item(), entropy_img_meter.avg)

@@ -67,7 +67,7 @@ extract fov data from semantic-kitti and construct data set semantic-kitti-fov
 if __name__ == "__main__":
     for seq in range(0, 11):
         createFovDataset(
-            src_root="/path/to/semantic-kitti/sequences", # path to the original semantic-kitti dataset
-            dst_root="/path/to/semantic-kitti-fov/sequences", # path to the generated semantic-kitti-fov dataset
+            src_root="/home/matej/diploma/datasets/semantic-kitti/sequences", # path to the original semantic-kitti dataset
+            dst_root="/home/matej/diploma/datasets/semantic-kitti-fov/sequences", # path to the generated semantic-kitti-fov dataset
             seq=seq
         )

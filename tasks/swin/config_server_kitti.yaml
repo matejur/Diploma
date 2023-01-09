@@ -4,16 +4,17 @@ seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 4
-experiment_id: "pmf_50_accumulate_8"
+experiment_id: "swin_final_changed_dataset"
 
 # data conifg
 val_only: false
 has_label: true
 is_debug: false
-n_epochs: 50
-batch_size: [1, 1]
-lr: 0.001
-warmup_epochs: 0
+n_epochs: 50 # was 50
+batch_size: [2, 4]
+lr: 0.00005
+warmup_epochs: 1
+remaining_epochs: 0
 momentum: 0.9
 weight_decay: 0.00001
 val_frequency: 1
@@ -22,17 +23,18 @@ dataset: "SemanticKitti"
 nclasses: 20 # 19+1(ignored)
 data_root: "/home/matej/diploma/datasets/semantic-kitti-fov/sequences"
 
-base_channels: 32
-img_backbone: "resnet34"
-imagenet_pretrained: true
+# base_channels: 32
+img_backbone: "swin_tiny"
+base_channels: 96
+# imagenet_pretrained: true
 
 lambda: 1.0 # weight of lovasz-softmax loss
 gamma: 0.5 # weight of perception-aware loss
 tau: 0.7 # confidence threshold
 
 # cehckpoint model
-checkpoint: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_pmf_50_accumulate_8/checkpoint/checkpoint.pth"
-pretrained_model: null 
+checkpoint: null
+pretrained_model: null
 
 ### data augmentation config ---------------------
 augmentation:
@@ -70,10 +72,10 @@ sensor:
   type: "perception-aware"
   # crop size of validation samples
   proj_h: 384
-  proj_w: 1232
+  proj_w: 1280
   # crop size of training samples
-  proj_ht: 256 
-  proj_wt: 1024 
+  proj_ht: 256
+  proj_wt: 1024
   h_pad: 7
   w_pad: 3
 

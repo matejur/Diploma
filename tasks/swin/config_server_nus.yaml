@@ -1,29 +1,30 @@
 # common config
-save_path: "../../experiments/PMF-SemanticKitti/"
+save_path: "../../experiments/PMF-nuScenes/"
 seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 4
-experiment_id: "pmf_50_accumulate_8"
+experiment_id: "baseline_timestamp"
 
 # data conifg
 val_only: false
 has_label: true
 is_debug: false
 n_epochs: 50
-batch_size: [1, 1]
+batch_size: [3, 3]
 lr: 0.001
-warmup_epochs: 0
+lr_decay: 0.99
+warmup_epochs: 1
 momentum: 0.9
 weight_decay: 0.00001
 val_frequency: 1
 
-dataset: "SemanticKitti"
-nclasses: 20 # 19+1(ignored)
-data_root: "/home/matej/diploma/datasets/semantic-kitti-fov/sequences"
+dataset: "nuScenes"
+nclasses: 17 # 16+1(ignored)
+data_root: "/home/matej/diploma/datasets/nuscenes"
 
 base_channels: 32
-img_backbone: "resnet34"
+img_backbone: "swin_tiny"
 imagenet_pretrained: true
 
 lambda: 1.0 # weight of lovasz-softmax loss
@@ -31,7 +32,7 @@ gamma: 0.5 # weight of perception-aware loss
 tau: 0.7 # confidence threshold
 
 # cehckpoint model
-checkpoint: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-resnet34_bs1-lr0.001_pmf_50_accumulate_8/checkpoint/checkpoint.pth"
+checkpoint: null
 pretrained_model: null 
 
 ### data augmentation config ---------------------
@@ -68,27 +69,26 @@ augmentation:
 sensor:
   name: "HDL64"
   type: "perception-aware"
-  # crop size of validation samples
-  proj_h: 384
-  proj_w: 1232
-  # crop size of training samples
-  proj_ht: 256 
-  proj_wt: 1024 
-  h_pad: 7
-  w_pad: 3
+  proj_h: 896
+  proj_w: 1600 
+  proj_ht: 512 
+  proj_wt: 640 
+  h_pad: 0
+  w_pad: 0
 
   img_mean:
-    - 12.12
-    - 10.88
-    - 0.23
-    - -1.04
-    - 0.21
+    - 16.51
+    - 0.10
+    - -0.21
+    - -0.21
+    - 21.18
   img_stds:
-    - 12.32
-    - 11.47
-    - 6.91
-    - 0.86
-    - 0.16  
+    - 14.16
+    - 14.35
+    - 16.09
+    - 2.34
+    - 22.45 
+
 post:
   KNN:
     use: false # This parameter default is false
