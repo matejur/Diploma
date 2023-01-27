@@ -4,7 +4,7 @@ seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 4
-experiment_id: "swin_no_dropout_batch_8_img_q"
+experiment_id: "hmmm"
 
 # data conifg
 val_only: false
@@ -33,7 +33,7 @@ gamma: 0.5 # weight of perception-aware loss
 tau: 0.7 # confidence threshold
 
 # cehckpoint model
-checkpoint: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-swin_tiny_bs2-lr0.0001_swin_no_dropout_batch_8_img_q/checkpoint/checkpoint.pth"
+checkpoint: null
 pretrained_model: null
 
 ### data augmentation config ---------------------
