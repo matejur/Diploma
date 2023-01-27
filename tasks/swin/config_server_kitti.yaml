@@ -4,7 +4,7 @@ seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 4
-experiment_id: "swin_final_changed_dataset"
+experiment_id: "swin_no_dropout_batch_8_img_q"
 
 # data conifg
 val_only: false
@@ -12,9 +12,9 @@ has_label: true
 is_debug: false
 n_epochs: 50 # was 50
 batch_size: [2, 4]
-lr: 0.00005
-warmup_epochs: 1
-remaining_epochs: 0
+lr: 0.0001
+warmup_epochs: 0
+remaining_epochs: 33
 momentum: 0.9
 weight_decay: 0.00001
 val_frequency: 1
@@ -33,7 +33,7 @@ gamma: 0.5 # weight of perception-aware loss
 tau: 0.7 # confidence threshold
 
 # cehckpoint model
-checkpoint: null
+checkpoint: "/home/matej/diploma/Diploma/experiments/PMF-SemanticKitti/log_SemanticKitti_PMFNet-swin_tiny_bs2-lr0.0001_swin_no_dropout_batch_8_img_q/checkpoint/checkpoint.pth"
 pretrained_model: null
 
 ### data augmentation config ---------------------

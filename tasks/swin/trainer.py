@@ -63,7 +63,6 @@ class Trainer(object):
         if remaining_epochs:
             max_steps = len(self.train_loader) * (remaining_epochs-self.settings.warmup_epochs)
 
-        print("max_steps: ", max_steps)
         self.scheduler = pc_processor.utils.WarmupCosineLR(
             optimizer=self.optimizer,
             lr=self.settings.lr,
@@ -294,6 +293,8 @@ class Trainer(object):
         feature_std = torch.Tensor(self.settings.config["sensor"]["img_stds"]).unsqueeze(
             0).unsqueeze(2).unsqueeze(2).cuda()
 
+        accum_iter = 8 // self.settings.batch_size[0]
+
         for i, (input_feature, input_mask, input_label) in enumerate(dataloader):
             t_process_start = time.time()
             input_feature = input_feature.cuda()
@@ -345,8 +346,15 @@ class Trainer(object):
                 if self.settings.n_gpus > 1:
                     total_loss = total_loss.mean()
 
+                total_loss = total_loss / accum_iter
+                total_loss.backward()
+
                 # backward
-                self._backward(total_loss)
+                # self._backward(total_loss)
+                if (i + 1) % accum_iter == 0 or i == total_iter - 1:
+                    self.optimizer.step()
+                    self.optimizer.zero_grad()
+                    
                 # update lr after backward (required by pytorch)
                 self.scheduler.step()
                 #self.aux_scheduler.step()

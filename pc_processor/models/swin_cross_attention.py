@@ -55,18 +55,18 @@ class SwinBackbone(nn.Module):
 
 
 class SwinBasedCrossFusion(nn.Module):
-    def __init__(self, out_dims):
+    def __init__(self, out_dims, pcd_q=True, size=8):
         super().__init__()
 
-        window_size = [8, 8]
+        self.pcd_q = pcd_q
+
+        window_size = [size, size]
         self.attn1 = SwinTransformerCrossBlock(
                 dim=out_dims,
                 num_heads=8,
                 window_size=window_size,
                 shift_size=[0, 0],
                 mlp_ratio=4,
-                dropout=0.5,
-                attention_dropout=0.5,
                 norm_layer = nn.LayerNorm
             )
 
@@ -74,17 +74,21 @@ class SwinBasedCrossFusion(nn.Module):
                 dim=out_dims,
                 num_heads=8,
                 window_size=window_size,
-                shift_size=[4, 4],
+                shift_size=[size // 2, size // 2],
                 mlp_ratio=4,
-                dropout=0.5,
-                attention_dropout=0.5,
                 norm_layer = nn.LayerNorm
             )
 
     def forward(self, pcd, img):
         # attn(q, kv)
-        x = self.attn1(pcd, img)
-        x = self.attn2(x, img)
+
+        if self.pcd_q:
+            x = self.attn1(pcd, img)
+            x = self.attn2(x, img)
+        else:
+            x = self.attn1(img, pcd)
+            x = self.attn2(img, x)
+
         # mogoče removaj ta skip
         x = x + pcd
         return x
@@ -162,12 +166,12 @@ class ConvUpsample(nn.Module):
 
 
 class SwinCrossFusion(SwinTransformer):
-    def __init__(self):
-        super().__init__(in_channels=5, patch_size=[4, 4], embed_dim=96, depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24], window_size=[8, 8], dropout=0.5, attention_dropout=0.5)
-        self.fusion_1 = SwinBasedCrossFusion(out_dims=96)
-        self.fusion_2 = SwinBasedCrossFusion(out_dims=192)
-        self.fusion_3 = SwinBasedCrossFusion(out_dims=384)
-        self.fusion_4 = SwinBasedCrossFusion(out_dims=768)
+    def __init__(self, pcd_q=True, size=8):
+        super().__init__(in_channels=5, patch_size=[4, 4], embed_dim=96, depths=[2, 2, 6, 2], num_heads=[3, 6, 12, 24], window_size=[size, size])
+        self.fusion_1 = SwinBasedCrossFusion(out_dims=96, pcd_q=pcd_q, size=size)
+        self.fusion_2 = SwinBasedCrossFusion(out_dims=192, pcd_q=pcd_q, size=size)
+        self.fusion_3 = SwinBasedCrossFusion(out_dims=384, pcd_q=pcd_q, size=size)
+        self.fusion_4 = SwinBasedCrossFusion(out_dims=768, pcd_q=pcd_q, size=size)
 
         net = self.features
         self.embed_patches = net[0]
@@ -206,12 +210,12 @@ class SwinCrossFusion(SwinTransformer):
         return self.upsample([out_1, out_2, out_3, out_4])
 
 class FusionCrossNet(nn.Module):
-    def __init__(self, backbone):
+    def __init__(self, backbone, pcd_q=True, size=8):
         super().__init__()
 
         self.backbone = SwinBackbone(backbone)
 
-        self.fusion = SwinCrossFusion()
+        self.fusion = SwinCrossFusion(pcd_q=pcd_q, size=size)
 
         self.upsample = ConvUpsample(in_channels=[96, 192, 384, 768], n_classes=20, base_channels=96)
 

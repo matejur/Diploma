@@ -40,7 +40,7 @@ class Inference(object):
             valset = pc_processor.dataset.semantic_kitti.SemanticKitti(
                 root=self.settings.data_root,
                 sequences=[8],
-                config_path="../../pc_processor/dataset/semantic_kitti/semantic-kitti.yaml",
+                config_path="../../pc_processor/dataset/semantic_kitti/semantic-kitti-reduced.yaml",
                 has_label=self.settings.has_label,
                 has_image=True
             )
@@ -101,7 +101,7 @@ class Inference(object):
 
                 input_label = input_label.long().cuda()
                 # do post process
-                _, pred_output = self.model(pcd_feature, img_feature)
+                pred_output, _ = self.model(pcd_feature, img_feature)
                                     
                 # do crop
                 pred_output = pred_output[:, :, h_pad: h_pad +
@@ -109,7 +109,8 @@ class Inference(object):
                 pred_argmax = pred_output[0].argmax(dim=0)
                 argmax = pred_output.argmax(dim=1)
                 if self.settings.has_label:
-                    self.pixel_eval.addBatch(argmax, input_label)
+                    argmax = self.salsa_loader.dataset.class_map_lut_inv[argmax.cpu().numpy()]
+                    self.pixel_eval.addBatch(argmax, input_label.cpu().numpy())
                     iter_miou, _ = self.pixel_eval.getIoU()
                 if self.knn_flag:
                     # knn post process
@@ -129,17 +130,11 @@ class Inference(object):
                 pred_np_origin = self.salsa_loader.dataset.class_map_lut_inv[pred_np]
 
                 if self.settings.has_label:
-                    # sem_label, _ = self.salsa_loader.dataset.loadLabelByIndex(
-                    #     i)
-                    # self.evaluator.addBatch(
-                    #     pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
-
-                    sem_label = input_label[0][uproj_x_idx, uproj_y_idx]
-                    sem_label = sem_label.cpu().numpy()
-                    sem_label = sem_label.reshape((-1)).astype(np.int32)
+                    sem_label, _ = self.salsa_loader.dataset.loadLabelByIndex(
+                        i)
 
                     self.evaluator.addBatch(
-                        pred_np, self.salsa_loader.dataset.class_map_lut[sem_label])
+                        pred_np_origin, self.salsa_loader.dataset.class_map_lut[sem_label])
 
                     
                 seq_id, frame_id = self.salsa_loader.dataset.parsePathInfoByIndex(
@@ -343,7 +338,7 @@ class Experiment(object):
         #     imagenet_pretrained=self.settings.imagenet_pretrained
         # )
 
-        model = pc_processor.models.FusionCrossNet(backbone=self.settings.img_backbone)
+        model = pc_processor.models.FusionCrossNet(backbone=self.settings.img_backbone, size=7, pcd_q=False)
 
         return model
 

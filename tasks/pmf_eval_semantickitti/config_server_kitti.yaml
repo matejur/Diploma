@@ -3,14 +3,14 @@ seed: 1
 gpu: "0"
 print_frequency: 2
 n_threads: 4
-experiment_id: "debug_timestamp"
+experiment_id: "RGB_reduced"
 
 # data conifg
 has_label: true
 is_debug: false
 
 dataset: "SemanticKitti"
-nclasses: 20 # 19+1(ignored)
+nclasses: 3 # 19+1(ignored)
 data_root: "/home/matej/diploma/datasets/semantic-kitti-fov/sequences"
 
 base_channels: 32
